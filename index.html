@@ -37,34 +37,86 @@
         </div>
     </div>
 
-    <script
->	const VPS_IP = "91.199.154.71";
-    const INF_TOPIC = "esp32/sensors";
-    const MQTT_USER = "esp32"; 
-    const MQTT_PASSWORD = "esp32password"; 
-    const brokerUrl = `ws://${VPS_IP}:9001`;
+    <script>
+        const VPS_IP = "91.199.154.71";
+        const INF_TOPIC = "esp32/sensors";
+        const MQTT_USER = "esp32"; 
+        const MQTT_PASSWORD = "esp32password"; 
+        const brokerUrl = `ws://${VPS_IP}:9001`;
 
-    console.log('Попытка подключения к:', brokerUrl);
+        console.log('Попытка подключения к:', brokerUrl);
 
-    const client = mqtt.connect(brokerUrl, {
-        keepalive: 60,
-        clean: true,
-        reconnectPeriod: 1000,
-        connectTimeout: 30 * 1000,
-        username: MQTT_USER,
-        password: MQTT_PASSWORD
-    });
+        const client = mqtt.connect(brokerUrl, {
+            keepalive: 60,
+            clean: false,        // Важно! Сохраняем сессию
+            reconnectPeriod: 1000,
+            connectTimeout: 30 * 1000,
+            username: MQTT_USER,
+            password: MQTT_PASSWORD,
+            clientId: 'web_monitor_' + Math.random().toString(16).substr(2, 8) // Уникальный ID
+        });
+
+        // Переменная для хранения последних полученных данных
+        let lastData = null;
+        let lastDataTime = null;
+
+        // Функция для отображения данных (даже если они из кэша)
+        function displayData(data, time) {
+            if (data.device) {
+                document.getElementById('device').innerHTML = `📱 Устройство: ${data.device}`;
+            }
+            
+            if (data.temperature !== undefined) {
+                document.getElementById('temp').textContent = data.temperature;
+                document.getElementById('temp-time').textContent = `⏱️ ${time}`;
+            }
+            
+            if (data.humidity !== undefined) {
+                document.getElementById('hum').textContent = data.humidity;
+                document.getElementById('hum-time').textContent = `⏱️ ${time}`;
+            }
+        }
+
+        // Функция для загрузки сохранённых данных из localStorage
+        function loadCachedData() {
+            try {
+                const cached = localStorage.getItem('lastSensorData');
+                const cachedTime = localStorage.getItem('lastSensorTime');
+                
+                if (cached && cachedTime) {
+                    const data = JSON.parse(cached);
+                    document.getElementById('raw').innerHTML = `📦 Загружено из кэша (${cachedTime}): ${cached}`;
+                    displayData(data, cachedTime);
+                    console.log('Загружены данные из кэша');
+                }
+            } catch (e) {
+                console.error('Ошибка загрузки кэша:', e);
+            }
+        }
+
+        // Загружаем кэшированные данные сразу при старте
+        loadCachedData();
+
         client.on('connect', () => {
             console.log('MQTT подключен');
             document.getElementById('status').innerHTML = '✅ Подключено к MQTT брокеру';
             document.getElementById('status').style.color = '#00ff88';
             
-            client.subscribe(INF_TOPIC, (err) => {
+            // Подписываемся с опцией для получения сохранённого сообщения
+            client.subscribe(INF_TOPIC, { qos: 0 }, (err, granted) => {
                 if (err) {
                     console.error('Ошибка подписки:', err);
                     document.getElementById('raw').innerHTML = '❌ Ошибка подписки на топик';
                 } else {
                     console.log('Подписка на топик успешна:', INF_TOPIC);
+                    
+                    // Проверяем, было ли получено retained сообщение
+                    // Если через 2 секунды нет новых данных, показываем уведомление
+                    setTimeout(() => {
+                        if (!lastData) {
+                            document.getElementById('raw').innerHTML = '⏳ Ожидание данных от устройства...';
+                        }
+                    }, 2000);
                 }
             });
         });
@@ -72,25 +124,32 @@
         client.on("message", (topic, message) => {
             const rawValue = message.toString();
             const time = new Date().toLocaleTimeString();
+            const isRetained = message.retained ? '📌 (сохранённое) ' : '';
             
-            console.log('Получено сообщение:', topic, rawValue);
-            document.getElementById('raw').innerHTML = `📨 Последнее сообщение (${time}): ${rawValue}`;
+            console.log('Получено сообщение:', topic, rawValue, 'Retained:', message.retained);
+            
+            // Сохраняем в localStorage для быстрого доступа при следующем открытии
+            try {
+                localStorage.setItem('lastSensorData', rawValue);
+                localStorage.setItem('lastSensorTime', time);
+            } catch (e) {
+                console.error('Ошибка сохранения в кэш:', e);
+            }
+            
+            document.getElementById('raw').innerHTML = `📨 ${isRetained}Последнее сообщение (${time}): ${rawValue}`;
             
             try {
                 const data = JSON.parse(rawValue);
+                lastData = data;
+                lastDataTime = time;
+                displayData(data, time);
                 
-                if (data.device) {
-                    document.getElementById('device').innerHTML = `📱 Устройство: ${data.device}`;
-                }
-                
-                if (data.temperature !== undefined) {
-                    document.getElementById('temp').textContent = data.temperature;
-                    document.getElementById('temp-time').textContent = `⏱️ ${time}`;
-                }
-                
-                if (data.humidity !== undefined) {
-                    document.getElementById('hum').textContent = data.humidity;
-                    document.getElementById('hum-time').textContent = `⏱️ ${time}`;
+                // Если это retained сообщение, подсвечиваем это
+                if (message.retained) {
+                    document.getElementById('raw').style.backgroundColor = '#f0f7ff';
+                    setTimeout(() => {
+                        document.getElementById('raw').style.backgroundColor = '';
+                    }, 1000);
                 }
                 
             } catch (e) {
@@ -107,7 +166,7 @@
         
         client.on('offline', () => {
             console.log('MQTT отключен');
-            document.getElementById('status').innerHTML = '📴 Отключено, переподключение...';
+            document.getElementById('status').innerHTML = '📴 Отключено, показываются кэшированные данные...';
             document.getElementById('status').style.color = '#ffaa00';
         });
 
