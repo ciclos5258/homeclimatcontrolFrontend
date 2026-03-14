@@ -1,29 +1,29 @@
-## 📡 **Стек технологий проекта климат-контроля**
+📡 **Climate Control Project Tech Stack**
 
-### 🔧 **Аппаратная часть (ESP32)**
-- **Микроконтроллер:** ESP32
-- **Датчики:** DHT11 (температура/влажность)
-- **Дисплей:** SSD1306 (OLED, 128x64, SPI интерфейс)
-- **Индикация:** Встроенный LED
+### 🔧 **Hardware (ESP32)**
+- **Microcontroller:** ESP32
+- **Sensors:** DHT11 (temperature/humidity)
+- **Display:** SSD1306 (OLED, 128x64, SPI interface)
+- **Indication:** Built-in LED
 
-### 💻 **Программная часть (Arduino/C++)**
-- **Библиотеки:** Adafruit GFX/SSD1306, DHT, PubSubClient, ArduinoJson
-- **Протоколы:** MQTT для передачи данных, Wi-Fi для связи
-- **Функционал:** Чтение датчиков, отображение на OLED, отправка JSON, управление LED через MQTT
+### 💻 **Software (Arduino/C++)**
+- **Libraries:** Adafruit GFX/SSD1306, DHT, PubSubClient, ArduinoJson
+- **Protocols:** MQTT for data transmission, Wi-Fi for communication
+- **Functionality:** Reading sensors, displaying on OLED, sending JSON, LED control via MQTT
 
-### 🌐 **Серверная часть (VPS)**
-- **MQTT Брокер:** Mosquitto (порт 1883)
-- **WebSocket прокси:** Для браузерного подключения (порт 9001 → /mqtt)
-- **ОС:** Linux (Ubuntu/Debian)
+### 🌐 **Server Side (VPS)**
+- **MQTT Broker:** Mosquitto (port 1883)
+- **WebSocket proxy:** For browser connection (port 9001 → /mqtt)
+- **OS:** Linux (Ubuntu/Debian)
 
-### 🖥️ **Веб-интерфейс**
-- **Фронтенд:** HTML5, CSS3
-- **MQTT в браузере:** MQTT.js (WebSocket)
-- **Хранение:** localStorage для кэширования данных
-- **Адаптивный дизайн:** CSS Grid/Flexbox
+### 🖥️ **Web Interface**
+- **Frontend:** HTML5, CSS3
+- **MQTT in browser:** MQTT.js (WebSocket)
+- **Storage:** localStorage for data caching
+- **Responsive design:** CSS Grid/Flexbox
 
-### 📦 **Формат данных**
-- **JSON структура:**
+### 📦 **Data Format**
+- **JSON structure:**
 ```json
 {
   "device": "esp32_1",
@@ -32,5 +32,5 @@
 }
 ```
 
-### 🔄 **Схема работы**
-`Датчики → ESP32 → MQTT → Брокер → Web клиент/Python скрипт`
+### 🔄 **Workflow**
+`Sensors → ESP32 → MQTT → Broker → Web client/Python script`
