@@ -5,6 +5,7 @@
     <link rel="stylesheet" href="style.css">
     <title>Climat Monitor</title>
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
     <div class="dashboard">
@@ -32,6 +33,12 @@
             </div>
         </div>
         
+        <!-- График температуры -->
+        <div class="chart-container">
+            <h3>📈 Temperature History</h3>
+            <canvas id="tempChart"></canvas>
+        </div>
+        
         <div class="raw-data" id="raw">
             Waiting for data...
         </div>
@@ -49,22 +56,129 @@
     const MQTT_USER = "esp32"; 
     const MQTT_PASSWORD = "esp32password"; 
     
-    // CHANGED: use wss:// and /mqtt path instead of direct connection to port 9001
-    // Also automatically determine the host so it works with both IP and domain
+    // WebSocket connection
     const brokerUrl = `wss://${window.location.hostname}/mqtt`;
     
     console.log('Attempting to connect to:', brokerUrl);
     console.log('Website protocol:', window.location.protocol);
 
+    // Данные для графика
+    let chartLabels = [];
+    let chartValues = [];
+    let maxDataPoints = 20; // Максимальное количество точек на графике
+    let chart;
+
+    // Функция инициализации графика
+    function initChart() {
+        const ctx = document.getElementById('tempChart').getContext('2d');
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: chartLabels,
+                datasets: [{
+                    label: 'Temperature (°C)',
+                    data: chartValues,
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 4,
+                    pointBackgroundColor: 'rgba(75, 192, 192, 1)',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                plugins: {
+                    legend: {
+                        position: 'top',
+                        labels: {
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.raw}°C`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)',
+                            font: {
+                                size: 12
+                            }
+                        },
+                        grid: {
+                            color: 'rgba(0, 0, 0, 0.1)'
+                        }
+                    },
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Time',
+                            font: {
+                                size: 12
+                            }
+                        },
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            maxRotation: 45,
+                            minRotation: 45
+                        }
+                    }
+                },
+                interaction: {
+                    mode: 'nearest',
+                    axis: 'x',
+                    intersect: false
+                }
+            }
+        });
+    }
+
+    // Функция обновления графика
+    function updateChart(temperature, timestamp) {
+        if (!chart) return;
+        
+        // Добавляем новые данные
+        chartLabels.push(timestamp);
+        chartValues.push(temperature);
+        
+        // Ограничиваем количество точек
+        if (chartLabels.length > maxDataPoints) {
+            chartLabels.shift();
+            chartValues.shift();
+        }
+        
+        // Обновляем график
+        chart.data.labels = chartLabels;
+        chart.data.datasets[0].data = chartValues;
+        chart.update();
+    }
+
     const client = mqtt.connect(brokerUrl, {
         keepalive: 60,
-        clean: false,        // Important! Preserve session
+        clean: false,
         reconnectPeriod: 1000,
         connectTimeout: 30 * 1000,
         username: MQTT_USER,
         password: MQTT_PASSWORD,
-        clientId: 'web_monitor_' + Math.random().toString(16).substr(2, 8), // Unique ID
-        // ADDED: for WebSocket via proxy
+        clientId: 'web_monitor_' + Math.random().toString(16).substr(2, 8),
         rejectUnauthorized: false
     });
 
@@ -81,6 +195,9 @@
         if (data.temperature !== undefined) {
             document.getElementById('temp').textContent = data.temperature;
             document.getElementById('temp-time').textContent = `⏱️ ${time}`;
+            
+            // Обновляем график при получении новой температуры
+            updateChart(data.temperature, time);
         }
         
         if (data.humidity !== undefined) {
@@ -106,15 +223,17 @@
         }
     }
 
-    // Load cached data immediately on start
-    loadCachedData();
+    // Инициализируем график при загрузке страницы
+    window.addEventListener('load', () => {
+        initChart();
+        loadCachedData();
+    });
 
     client.on('connect', () => {
         console.log('MQTT connected');
         document.getElementById('status').innerHTML = '✅ Connected to MQTT broker';
         document.getElementById('status').style.color = '#00ff88';
         
-        // Subscribe with option to receive retained message
         client.subscribe(INF_TOPIC, { qos: 0 }, (err, granted) => {
             if (err) {
                 console.error('Subscription error:', err);
@@ -122,8 +241,6 @@
             } else {
                 console.log('Successfully subscribed to topic:', INF_TOPIC);
                 
-                // Check if retained message was received
-                // If no new data after 2 seconds, show notification
                 setTimeout(() => {
                     if (!lastData) {
                         document.getElementById('raw').innerHTML = '⏳ Waiting for data from device...';
@@ -140,7 +257,6 @@
         
         console.log('Message received:', topic, rawValue, 'Retained:', message.retained);
         
-        // Save to localStorage for quick access on next open
         try {
             localStorage.setItem('lastSensorData', rawValue);
             localStorage.setItem('lastSensorTime', time);
@@ -156,7 +272,6 @@
             lastDataTime = time;
             displayData(data, time);
             
-            // If this is a retained message, highlight it
             if (message.retained) {
                 document.getElementById('raw').style.backgroundColor = '#f0f7ff';
                 setTimeout(() => {
@@ -185,6 +300,6 @@
     client.on('reconnect', () => {
         console.log('Attempting to reconnect...');
     });
-</script>
+    </script>
 </body>
 </html>
